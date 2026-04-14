@@ -1,0 +1,42 @@
+name: AI Log Analysis
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-analyze:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Run failing build and capture log
+        run: |
+          set +e
+          bash scripts/fail_build.sh 2>&1 | tee build.log
+          echo "BUILD_EXIT=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Analyze failure with OpenAI
+        if: env.BUILD_EXIT != '0'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          echo "===== AI LOG ANALYSIS (OPENAI) ====="
+          python3 scripts/analyze_openai.py build.log
+          echo "===== END AI LOG ANALYSIS (OPENAI) ====="
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+
+      - name: Fail workflow if build failed
+        if: env.BUILD_EXIT != '0'
+        run: exit 1
